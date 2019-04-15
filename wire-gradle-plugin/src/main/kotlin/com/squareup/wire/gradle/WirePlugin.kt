@@ -16,12 +16,11 @@
 package com.squareup.wire.gradle
 
 import com.squareup.wire.gradle.WireExtension.JavaTarget
+import com.squareup.wire.gradle.WireExtension.SourceJar
 import com.squareup.wire.schema.Target
 import org.gradle.api.Plugin
 import org.gradle.api.Project
-import org.gradle.api.UnknownDomainObjectException
 import org.gradle.api.file.SourceDirectorySet
-import org.gradle.api.internal.HasConvention
 import org.gradle.api.internal.file.FileOrUriNotationConverter
 import org.gradle.api.internal.file.SourceDirectorySetFactory
 import org.gradle.api.plugins.JavaBasePlugin
@@ -29,10 +28,7 @@ import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.tasks.compile.JavaCompile
-import org.jetbrains.kotlin.gradle.plugin.KOTLIN_DSL_NAME
-import org.jetbrains.kotlin.gradle.plugin.KOTLIN_JS_DSL_NAME
 import org.jetbrains.kotlin.gradle.plugin.KotlinBasePluginWrapper
-import org.jetbrains.kotlin.gradle.plugin.KotlinSourceSet
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.io.File
 import java.net.URI
@@ -89,8 +85,10 @@ class WirePlugin @Inject constructor(
     val sourceConfiguration = project.configurations.create("wireSourceDependencies")
 
     val sourcePaths =
-      if (extension.sourcePaths.isNotEmpty() || extension.sourceTrees.isNotEmpty()) {
-        mergeDependencyPaths(project, extension.sourcePaths, extension.sourceTrees)
+      if (extension.sourcePaths.isNotEmpty() || extension.sourceTrees.isNotEmpty() || extension.sourceJars.isNotEmpty()) {
+        mergeDependencyPaths(
+            project, extension.sourcePaths, extension.sourceTrees, extension.sourceJars
+        )
       } else {
         mergeDependencyPaths(project, setOf("src/main/proto"))
       }
@@ -100,8 +98,11 @@ class WirePlugin @Inject constructor(
 
     val protoConfiguration = project.configurations.create("wireProtoDependencies")
 
-    if (extension.protoPaths.isNotEmpty() || extension.protoTrees.isNotEmpty()) {
-      val allPaths = mergeDependencyPaths(project, extension.protoPaths, extension.protoTrees)
+    if (extension.protoPaths.isNotEmpty() || extension.protoTrees.isNotEmpty() || extension.sourceJars.isNotEmpty()) {
+      val allPaths = mergeDependencyPaths(
+          project, extension.protoPaths, extension.protoTrees, extension.sourceJars,
+          isProtoPath = true
+      )
       allPaths.forEach { path ->
         protoConfiguration.dependencies.add(project.dependencies.create(path))
       }
@@ -186,9 +187,19 @@ class WirePlugin @Inject constructor(
   private fun mergeDependencyPaths(
     project: Project,
     dependencyPaths: Set<String>,
-    dependencyTrees: Set<SourceDirectorySet> = emptySet()
+    dependencyTrees: Set<SourceDirectorySet> = emptySet(),
+    dependencyJars: Set<SourceJar> = emptySet(),
+    isProtoPath: Boolean = false
   ): List<Any> {
     val allPaths = dependencyTrees.toMutableList<Any>()
+
+    dependencyJars.forEach { jar ->
+      if (!isProtoPath) {
+        allPaths += project.zipTree(jar.srcJar).matching { it.include(jar.allIncludes) } as Any
+      } else {
+        allPaths += project.zipTree(jar.srcJar).matching { it.include("**/*.proto") } as Any
+      }
+    }
 
     val parser = FileOrUriNotationConverter.parser()
     dependencyPaths.forEach { path ->
@@ -204,6 +215,8 @@ class WirePlugin @Inject constructor(
         }
         if (file.isDirectory) {
           allPaths += project.files(path) as Any
+        } else if (file.isJar) {
+          allPaths += project.zipTree(file).matching { it.include("**/*.proto") } as Any
         } else {
           throw IllegalArgumentException(
               "Invalid path string: \"$path\". For individual files, use the closure syntax."
@@ -230,3 +243,6 @@ class WirePlugin @Inject constructor(
       false
     }
 }
+
+private val File.isJar
+  get() = path.endsWith(".jar")

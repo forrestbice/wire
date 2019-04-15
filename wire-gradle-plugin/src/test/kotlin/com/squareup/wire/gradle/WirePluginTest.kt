@@ -180,6 +180,24 @@ class WirePluginTest {
   }
 
   @Test
+  fun sourceJarOneJarMultipleFiles() {
+    val fixtureRoot = File("src/test/projects/sourcejar-many-files")
+
+    val result = gradleRunner
+        .withProjectDir(fixtureRoot)
+        .withDebug(true)
+        .build()
+
+    assertThat(result.task(":generateProtos")).isNotNull
+    assertThat(result.output)
+        .contains("Writing com.squareup.dinosaurs.Dinosaur")
+        .contains("Writing com.squareup.geology.Period")
+        .contains(
+            "src/test/projects/sourcejar-many-files/build/generated/src/main/java"
+        )
+  }
+
+  @Test
   fun differentJavaOutputDir() {
     val fixtureRoot = File("src/test/projects/different-java-out")
 

@@ -99,15 +99,41 @@ open class WireExtension(
     this.sourcePaths.addAll(sourcePaths)
   }
 
-  /**
-   * Source paths for local file trees, backed by a [org.gradle.api.file.SourceDirectorySet]
-   * Must provide at least a [org.gradle.api.file.SourceDirectorySet.srcDir]
-   */
-  fun sourcePath(closure: Closure<SourceDirectorySet>) {
-    val sourceTree = sourceDirectorySetFactory.create("source-tree", "Source path tree")
-    sourceTree.filter.include("**/*.proto")
-    ConfigureUtil.configure<SourceDirectorySet>(closure, sourceTree)
-    sourceTrees.add(sourceTree)
+  var sourceJar: SourceJar? = null
+  internal val sourceJars = mutableSetOf<SourceJar>()
+
+  fun sourcePath(action: Action<SourceJar>) {
+    sourceJar = objectFactory.newInstance(SourceJar::class.java)
+    action.execute(sourceJar!!)
+
+    // convert to SourceDirectorySets
+    if (sourceJar!!.allSrcDirs.isNotEmpty()) {
+      val sourceTree = sourceDirectorySetFactory.create("source-tree", "Source path tree")
+      sourceTree.filter.include("**/*.proto")
+      sourceTree.srcDirs(sourceJar!!.allSrcDirs)
+      sourceTree.filter.include(sourceJar!!.allIncludes)
+      sourceTrees.add(sourceTree)
+    } else if (sourceJar!!.srcJar != null) {
+       sourceJars.add(sourceJar!!)
+    }
+  }
+
+  open class SourceJar {
+    val allSrcDirs = mutableListOf<String>()
+    var srcJar: String? = null
+    val allIncludes = mutableListOf<String>()
+
+    fun srcDir(dir: String) {
+      allSrcDirs += dir
+    }
+
+    fun srcJar(jarFile: String) {
+      srcJar = jarFile
+    }
+
+    fun include(vararg includes: String) {
+      allIncludes += includes
+    }
   }
 
   @InputFiles

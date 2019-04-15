@@ -109,13 +109,18 @@ open class WireTask : SourceTask() {
         .flatMap { dep ->
           files(dep)
               .map { file ->
-                if (dep is FileCollectionDependency && dep.files is SourceDirectorySet) {
+                if (dep !is FileCollectionDependency) {
+                  Location.get(file.path)
+                } else if (dep.files is SourceDirectorySet) {
                   val srcDir = (dep.files as SourceDirectorySet).srcDirs.first {
                     file.path.startsWith(it.path + "/")
                   }
-                  Location.get(srcDir.path, file.path.substring(srcDir.path.length + 1))
+                  return@map Location.get(srcDir.path, file.path.substring(srcDir.path.length + 1))
                 } else {
-                  Location.get(file.path)
+                  val result = ".*\\.jar_[0-9a-f]+/(.*)".toRegex().matchEntire(file.path)
+                  result?.groups?.get(1)?.let {
+                    Location.get(file.path.substringBefore(it.value), it.value)
+                  } ?: Location.get(file.path)
                 }
               }
         }
